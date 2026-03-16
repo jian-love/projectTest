@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import './App.css'
 
-const API_BASE = 'http://localhost:3000'
+// 前端跟随当前域名，开发环境通过 Vite 代理到 3000
+const API_BASE = ''
 
 function useQuery() {
   const search = window.location.search
@@ -128,15 +129,6 @@ function MakerView({ id, onCreated }) {
       if (!data.ok) {
         alert(data.error || '提交失败')
         return
-      }
-      // 提交成功后，如果有音乐，立即开始播放
-      if (musicUrl) {
-        try {
-          const audio = new Audio(`${API_BASE}${musicUrl}`)
-          await audio.play()
-        } catch (e) {
-          // 自动播放失败（例如浏览器策略限制）时静默忽略
-        }
       }
       onCreated({
         images: imageUrls,
@@ -326,23 +318,20 @@ function PlayView({ id, card, error }) {
   }
 
   return (
-    <div className="page" onClick={handleTap}>
-      <div className="card">
-        <button className="edit-btn" onClick={(e) => (e.stopPropagation(), handleEdit())}>
-          返回修改
-        </button>
-        {phase === 'cube' && (
-          <>
-            <div className="play-wrapper">
-              <div ref={containerRef} className="three-container" />
-            </div>
-            <div className="tap-tip">轻触屏幕 · 开启表白文字</div>
-          </>
-        )}
-        {phase === 'text' && <TextRain messages={card.messages || []} />}
-        <audio ref={audioRef} loop />
-        {error && <div className="error">{error}</div>}
-      </div>
+    <div className="play-full" onClick={handleTap}>
+      <div ref={containerRef} className="three-full" />
+      {phase === 'text' && <TextRain messages={card.messages || []} />}
+      <button
+        className="edit-btn play-edit-btn"
+        onClick={(e) => {
+          e.stopPropagation()
+          handleEdit()
+        }}
+      >
+        返回修改
+      </button>
+      <audio ref={audioRef} loop />
+      {error && <div className="error play-error">{error}</div>}
     </div>
   )
 }

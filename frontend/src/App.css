@@ -118,24 +118,18 @@ body {
   margin-top: 12px;
 }
 
-.play-wrapper {
-  width: 100%;
-  min-height: 260px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  text-align: center;
-  margin-top: 6px;
+/* 播放页：手机上全屏立方体 + 文本雨 */
+.play-full {
+  position: relative;
+  min-height: 100vh;
+  background: #000;
+  overflow: hidden;
+  color: #fff;
 }
 
-.three-container {
-  flex: 1;
-  width: 100%;
-  border-radius: 24px;
-  overflow: hidden;
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.8);
-  background: radial-gradient(circle at center, #222, #000);
+.three-full {
+  position: absolute;
+  inset: 0;
 }
 
 .msg {
@@ -155,9 +149,6 @@ body {
 }
 
 .edit-btn {
-  position: absolute;
-  top: 10px;
-  right: 12px;
   padding: 6px 12px;
   border-radius: 999px;
   border: 1px solid #ffb4cc;
@@ -165,6 +156,13 @@ body {
   color: #ffbed8;
   font-size: 11px;
   cursor: pointer;
+}
+
+.play-edit-btn {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 10;
 }
 
 .error {
