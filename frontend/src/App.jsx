@@ -129,7 +129,15 @@ function MakerView({ id, onCreated }) {
         alert(data.error || '提交失败')
         return
       }
-      alert('制作成功！以后再扫卡就会直接看到表白动效。')
+      // 提交成功后，如果有音乐，立即开始播放
+      if (musicUrl) {
+        try {
+          const audio = new Audio(`${API_BASE}${musicUrl}`)
+          await audio.play()
+        } catch (e) {
+          // 自动播放失败（例如浏览器策略限制）时静默忽略
+        }
+      }
       onCreated({
         images: imageUrls,
         musicUrl,
@@ -198,6 +206,21 @@ function PlayView({ id, card, error }) {
   const [phase, setPhase] = useState('cube') // 'cube' | 'text'
   const audioRef = useRef(null)
   const containerRef = useRef(null)
+
+  // 页面进入时，如果有音乐，尝试自动播放一次
+  useEffect(() => {
+    if (!card.musicUrl || !audioRef.current) return
+    const audio = audioRef.current
+    audio.src = `${API_BASE}${card.musicUrl}`
+    audio
+      .play()
+      .then(() => {
+        // 自动播放成功就保持当前 phase 逻辑
+      })
+      .catch(() => {
+        // 浏览器策略禁止自动播放时忽略，用户点击后再播放
+      })
+  }, [card.musicUrl])
 
   useEffect(() => {
     if (phase !== 'cube') {
@@ -283,10 +306,13 @@ function PlayView({ id, card, error }) {
   }, [card.images, phase])
 
   const handleTap = () => {
+    // 第一次点击：如果有音乐且尚未播放，只负责「开音乐」
     if (card.musicUrl && audioRef.current && audioRef.current.paused) {
       audioRef.current.src = `${API_BASE}${card.musicUrl}`
       audioRef.current.play().catch(() => {})
+      return
     }
+    // 之后的点击：再负责从立方体切换到文字动效
     if (phase === 'cube') {
       setPhase('text')
     }

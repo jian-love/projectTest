@@ -83,25 +83,18 @@ app.post('/api/card', (req, res) => {
   if (!id) return res.status(400).json({ error: 'missing id' });
   const cards = readCards();
 
-  // 覆盖前，尝试删除旧的上传文件，避免 uploads 目录无限变大
+  // 业务约束：一个资源只属于一个卡片
+  // 因此在用户点击「修改」并保存时，直接删除该 id 旧卡片下的所有资源文件
   const old = cards[id];
   if (old) {
     const oldFiles = []
       .concat(old.images || [])
       .concat(old.musicUrl ? [old.musicUrl] : []);
 
-    const allCards = Object.entries(cards).filter(([key]) => key !== id);
-
     oldFiles.forEach((urlPath) => {
       if (!urlPath || typeof urlPath !== 'string') return;
-      // 如果其他卡片还在使用这个文件，就不删
-      const usedElsewhere = allCards.some(([, c]) => {
-        const imgs = c.images || [];
-        const mu = c.musicUrl || '';
-        return imgs.includes(urlPath) || mu === urlPath;
-      });
-      if (usedElsewhere) return;
 
+      // 直接删除该卡片旧的资源文件
       const filePath = path.join(__dirname, urlPath.replace(/^\//, ''));
       if (fs.existsSync(filePath)) {
         try {
