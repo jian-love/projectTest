@@ -10,7 +10,8 @@ const PORT = 3000;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+// 线上直接使用打包后的前端静态文件
+app.use(express.static(path.join(__dirname, 'frontend', 'dist')));
 
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
