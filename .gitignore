@@ -1,0 +1,21 @@
+node_modules/
+frontend/node_modules/
+
+# Build output
+frontend/dist/
+
+# Runtime uploads and data
+uploads/
+cards.json
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
