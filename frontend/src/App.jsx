@@ -27,7 +27,7 @@ function App() {
         if (data.exists && data.card) {
           setCard(data.card)
         }
-      } catch (e) {
+      } catch {
         setError('加载失败，请稍后重试')
       } finally {
         setLoading(false)
@@ -207,7 +207,7 @@ function MakerView({ id, onCreated }) {
   )
 }
 
-function PlayView({ id, card, error, onRequestEdit }) {
+function PlayView({ card, error, onRequestEdit }) {
   const [phase, setPhase] = useState('cube') // 'cube' | 'text'
   const audioRef = useRef(null)
   const containerRef = useRef(null)
@@ -403,20 +403,34 @@ function PlayView({ id, card, error, onRequestEdit }) {
 }
 
 function TextRain({ messages }) {
-  const baseArr =
-    messages && messages.length ? messages : ['在一起', '喜欢你', '永远爱你']
+  const [seed] = useState(() => Math.random())
 
-  const rows = 50
-  const items = []
-  for (let i = 0; i < rows; i++) {
-    const text = baseArr[Math.floor(Math.random() * baseArr.length)]
-    items.push({
-      text,
-      delay: i * 80,
-      offset: (Math.random() - 0.5) * 60, // 左右更大范围
-      topBase: 10 + Math.random() * 70, // 随机起始高度
-    })
-  }
+  // 基于固定 seed 生成随机文字雨，保证一次挂载期间稳定
+  const items = useMemo(() => {
+    const baseArr =
+      messages && messages.length ? messages : ['在一起', '喜欢你', '永远爱你']
+
+    const rows = 50
+    const list = []
+    let current = seed
+
+    const nextRandom = () => {
+      // 简单 LCG 伪随机，避免直接调用 Math.random
+      current = (current * 9301 + 49297) % 233280
+      return current / 233280
+    }
+
+    for (let i = 0; i < rows; i++) {
+      const text = baseArr[Math.floor(nextRandom() * baseArr.length)]
+      list.push({
+        text,
+        delay: i * 80,
+        offset: (nextRandom() - 0.5) * 60, // 左右更大范围
+        topBase: 10 + nextRandom() * 70, // 随机起始高度
+      })
+    }
+    return list
+  }, [messages, seed])
 
   return (
     <div className="text-rain">
