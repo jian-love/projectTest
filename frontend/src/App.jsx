@@ -5,20 +5,19 @@ import './App.css'
 // 前端跟随当前域名，开发环境通过 Vite 代理到 3000
 const API_BASE = ''
 
-function useQuery() {
+function useQueryId() {
   const search = window.location.search
   const params = useMemo(() => new URLSearchParams(search), [search])
   const id = params.get('id') || 'demo001'
-  const mode = params.get('edit') === '1' ? 'edit' : 'view'
-  return { id, mode }
+  return id
 }
 
 function App() {
-  const { id, mode } = useQuery()
+  const id = useQueryId()
   const [loading, setLoading] = useState(true)
   const [card, setCard] = useState(null)
   const [error, setError] = useState('')
-  const [localMode, setLocalMode] = useState(mode)
+  const [viewMode, setViewMode] = useState('auto') // auto | edit
 
   useEffect(() => {
     async function fetchCard() {
@@ -48,22 +47,29 @@ function App() {
     )
   }
 
-  if (!card || localMode === 'edit') {
+  const isEmptyCard =
+    !card || !card.images || !Array.isArray(card.images) || card.images.length === 0
+
+  if (viewMode === 'edit' || isEmptyCard) {
     return (
       <MakerView
         id={id}
         onCreated={(newCard) => {
           setCard(newCard)
-          setLocalMode('view')
-          const url = new URL(window.location.href)
-          url.searchParams.delete('edit')
-          window.history.replaceState(null, '', url.toString())
+          setViewMode('auto')
         }}
       />
     )
   }
 
-  return <PlayView id={id} card={card} error={error} />
+  return (
+    <PlayView
+      id={id}
+      card={card}
+      error={error}
+      onRequestEdit={() => setViewMode('edit')}
+    />
+  )
 }
 
 function MakerView({ id, onCreated }) {
@@ -201,10 +207,12 @@ function MakerView({ id, onCreated }) {
   )
 }
 
-function PlayView({ id, card, error }) {
+function PlayView({ id, card, error, onRequestEdit }) {
   const [phase, setPhase] = useState('cube') // 'cube' | 'text'
   const audioRef = useRef(null)
   const containerRef = useRef(null)
+  const longPressTimer = useRef(null)
+  const longPressActive = useRef(false)
 
   // 页面进入时，如果有音乐，尝试自动播放一次
   useEffect(() => {
@@ -357,26 +365,37 @@ function PlayView({ id, card, error }) {
     }
   }
 
-  const handleEdit = () => {
-    const origin = window.location.origin
-    window.location.href = `${origin}/?id=${encodeURIComponent(
-      id,
-    )}&edit=1`
+  const handleLongPressStart = () => {
+    if (!onRequestEdit) return
+    longPressActive.current = true
+    longPressTimer.current = setTimeout(() => {
+      if (longPressActive.current) {
+        onRequestEdit()
+      }
+    }, 3000)
+  }
+
+  const handleLongPressEnd = () => {
+    longPressActive.current = false
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
   }
 
   return (
-    <div className="play-full" onClick={handleTap}>
+    <div
+      className="play-full"
+      onClick={handleTap}
+      onMouseDown={handleLongPressStart}
+      onMouseUp={handleLongPressEnd}
+      onMouseLeave={handleLongPressEnd}
+      onTouchStart={handleLongPressStart}
+      onTouchEnd={handleLongPressEnd}
+      onTouchCancel={handleLongPressEnd}
+    >
       <div ref={containerRef} className="three-full" />
       {phase === 'text' && <TextRain messages={card.messages || []} />}
-      <button
-        className="edit-btn play-edit-btn"
-        onClick={(e) => {
-          e.stopPropagation()
-          handleEdit()
-        }}
-      >
-        返回修改
-      </button>
       <audio ref={audioRef} loop />
       {error && <div className="error play-error">{error}</div>}
     </div>

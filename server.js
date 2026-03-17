@@ -3,6 +3,7 @@ const cors = require('cors');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = 3000;
@@ -67,6 +68,14 @@ function cleanupUploads(cards) {
   });
 }
 
+function generateId(existing) {
+  let id;
+  do {
+    id = crypto.randomBytes(4).toString('hex');
+  } while (existing[id]);
+  return id;
+}
+
 app.get('/api/card', (req, res) => {
   const id = req.query.id;
   if (!id) return res.status(400).json({ error: 'missing id' });
@@ -76,6 +85,26 @@ app.get('/api/card', (req, res) => {
     return res.json({ exists: false });
   }
   res.json({ exists: true, card });
+});
+
+// 生成新的卡片 id，并返回可直接写入 NFC 的链接
+app.post('/api/new-card', (req, res) => {
+  const cards = readCards();
+  const id = generateId(cards);
+  // 先占个位，内容为空，防止重复生成同 id
+  cards[id] = { images: [], musicUrl: '', messages: [] };
+  writeCards(cards);
+
+  const origin =
+    (req.headers['x-forwarded-proto'] && req.headers['x-forwarded-host']
+      ? `${req.headers['x-forwarded-proto']}://${req.headers['x-forwarded-host']}`
+      : '') || '';
+
+  const url = origin
+    ? `${origin}/?id=${id}`
+    : `https://你的正式域名替换这里/?id=${id}`;
+
+  res.json({ id, url });
 });
 
 app.post('/api/card', (req, res) => {
