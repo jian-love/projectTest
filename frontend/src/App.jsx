@@ -139,10 +139,11 @@ function MakerView({ id, onCreated }) {
   const handleMusicChange = (e) => {
     const file = e.target.files?.[0] || null
     if (file) {
-      // 限制音乐文件大小，避免大文件在弱网环境下频繁上传失败（默认上限 8MB）
+      // 允许视频/音频文件，统一作为“提取音乐”的原素材
+      // 限制文件大小，避免大文件在弱网环境下频繁上传失败（默认上限 30MB）
       const maxSize = 8 * 1024 * 1024
       if (file.size > maxSize) {
-        alert('音乐文件过大，建议截取 60 秒以内的片段（小于 8MB）再上传')
+        alert('视频/音频文件过大，建议截取 60 秒以内的片段（小于 30MB）再上传')
         if (e.target) {
           e.target.value = ''
         }
@@ -200,7 +201,19 @@ function MakerView({ id, onCreated }) {
       }
       let musicUrl = ''
       if (music) {
-        musicUrl = await uploadFile(music)
+        const form = new FormData()
+        form.append('file', music)
+        const res = await fetch(`${API_BASE}/api/extract-audio`, {
+          method: 'POST',
+          body: form,
+        })
+        const data = await res.json()
+        if (!res.ok || !data.url) {
+          alert(data.error || '提取音乐失败，请稍后再试或更换视频')
+          setSubmitting(false)
+          return
+        }
+        musicUrl = data.url
       }
       const messages = lines.map((v) => v.trim()).filter(Boolean)
       const res = await fetch(`${API_BASE}/api/card`, {
@@ -248,11 +261,11 @@ function MakerView({ id, onCreated }) {
           </div>
         </div>
 
-        <div className="section-title">选择背景音乐（不超过 60 秒）</div>
+        <div className="section-title">提取音乐（从视频 / 录屏中自动提取，建议不超过 60 秒）</div>
         <div className="upload-box">
           <label className="upload-btn">
-            选择音乐
-            <input type="file" accept="audio/*" onChange={handleMusicChange} />
+            提取音乐
+            <input type="file" accept="video/*" onChange={handleMusicChange} />
           </label>
           <div className="pill">{music ? music.name : '未选择音乐'}</div>
           {musicPreviewUrl && (

@@ -4,6 +4,7 @@ const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
 
 const app = express();
 const PORT = 3000;
@@ -148,6 +149,55 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
   const urlPath = `/uploads/${req.file.filename}`;
   res.json({ url: urlPath });
+});
+
+// 从上传的视频或音频中提取音频，统一转成 mp3
+app.post('/api/extract-audio', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'no file' });
+
+  const inputPath = req.file.path;
+  const baseName = path.parse(req.file.filename).name;
+  const outputName = `${baseName}-audio.mp3`;
+  const outputPath = path.join(uploadDir, outputName);
+
+  // ffmpeg -i input -vn -acodec libmp3lame -ab 192k output
+  const ffmpeg = spawn('ffmpeg', [
+    '-y',
+    '-i',
+    inputPath,
+    '-vn',
+    '-acodec',
+    'libmp3lame',
+    '-ab',
+    '192k',
+    outputPath,
+  ]);
+
+  ffmpeg.on('error', () => {
+    // 进程启动失败
+    try {
+      if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+    } catch {}
+    res.status(500).json({ error: '音频提取失败，请稍后重试（ffmpeg not found）' });
+  });
+
+  ffmpeg.on('close', (code) => {
+    // 删除临时输入文件
+    try {
+      if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+    } catch {}
+
+    if (code !== 0) {
+      // 转码失败
+      try {
+        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+      } catch {}
+      return res.status(500).json({ error: '音频提取失败，请更换视频或稍后再试' });
+    }
+
+    const urlPath = `/uploads/${outputName}`;
+    res.json({ url: urlPath });
+  });
 });
 
 app.use('/uploads', express.static(uploadDir));
