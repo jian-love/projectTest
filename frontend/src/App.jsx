@@ -123,6 +123,7 @@ function compressImage(file, maxSize = 1280, quality = 0.8) {
 function MakerView({ id, onCreated }) {
   const [images, setImages] = useState([])
   const [music, setMusic] = useState(null)
+  const [musicPreviewUrl, setMusicPreviewUrl] = useState('')
   const [lines, setLines] = useState(['', '', '', ''])
   const [submitting, setSubmitting] = useState(false)
 
@@ -137,7 +138,28 @@ function MakerView({ id, onCreated }) {
 
   const handleMusicChange = (e) => {
     const file = e.target.files?.[0] || null
-    setMusic(file)
+    if (file) {
+      // 限制音乐文件大小，避免大文件在弱网环境下频繁上传失败（默认上限 8MB）
+      const maxSize = 8 * 1024 * 1024
+      if (file.size > maxSize) {
+        alert('音乐文件过大，建议截取 60 秒以内的片段（小于 8MB）再上传')
+        if (e.target) {
+          e.target.value = ''
+        }
+        return
+      }
+      setMusic(file)
+      if (musicPreviewUrl) {
+        URL.revokeObjectURL(musicPreviewUrl)
+      }
+      setMusicPreviewUrl(URL.createObjectURL(file))
+    } else {
+      setMusic(null)
+      if (musicPreviewUrl) {
+        URL.revokeObjectURL(musicPreviewUrl)
+      }
+      setMusicPreviewUrl('')
+    }
     if (e.target) {
       e.target.value = ''
     }
@@ -233,6 +255,15 @@ function MakerView({ id, onCreated }) {
             <input type="file" accept="audio/*" onChange={handleMusicChange} />
           </label>
           <div className="pill">{music ? music.name : '未选择音乐'}</div>
+          {musicPreviewUrl && (
+            <div style={{ marginTop: 8, width: '100%' }}>
+              <audio
+                controls
+                src={musicPreviewUrl}
+                style={{ width: '100%' }}
+              />
+            </div>
+          )}
         </div>
 
         <div className="section-title">输入文案（每句不超过十字）</div>
