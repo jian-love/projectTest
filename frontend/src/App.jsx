@@ -72,6 +72,54 @@ function App() {
   )
 }
 
+// 图片压缩：限制最大边长，降低质量，减少上传体积
+function compressImage(file, maxSize = 1280, quality = 0.8) {
+  return new Promise((resolve) => {
+    if (!file || !file.type || !file.type.startsWith('image/')) {
+      resolve(file)
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        let { width, height } = img
+        if (width <= maxSize && height <= maxSize) {
+          resolve(file)
+          return
+        }
+
+        const scale = Math.min(maxSize / width, maxSize / height)
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(width * scale)
+        canvas.height = Math.round(height * scale)
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              resolve(file)
+              return
+            }
+            const compressed = new File([blob], file.name || 'image.jpg', {
+              type: 'image/jpeg',
+            })
+            resolve(compressed)
+          },
+          'image/jpeg',
+          quality,
+        )
+      }
+      img.onerror = () => resolve(file)
+      img.src = reader.result
+    }
+    reader.onerror = () => resolve(file)
+    reader.readAsDataURL(file)
+  })
+}
+
 function MakerView({ id, onCreated }) {
   const [images, setImages] = useState([])
   const [music, setMusic] = useState(null)
@@ -102,8 +150,13 @@ function MakerView({ id, onCreated }) {
   }
 
   const uploadFile = async (file) => {
+    let toUpload = file
+    // 对图片做一次压缩，减小体积，加快上传与加载
+    if (file && file.type && file.type.startsWith('image/')) {
+      toUpload = await compressImage(file)
+    }
     const form = new FormData()
-    form.append('file', file)
+    form.append('file', toUpload, toUpload.name || file.name)
     const res = await fetch(`${API_BASE}/api/upload`, {
       method: 'POST',
       body: form,
@@ -246,108 +299,88 @@ function PlayView({ card, error, onRequestEdit }) {
       faceUrls.push(urls.length ? `${API_BASE}${urls[i % urls.length]}` : '')
     }
 
-    const loadTexture = (url) =>
-      new Promise((resolve) => {
-        if (!url) {
-          resolve(null)
-          return
-        }
-        loader.load(
-          url,
-          (tex) => {
-            tex.colorSpace = THREE.SRGBColorSpace
-            resolve(tex)
-          },
-          undefined,
-          () => resolve(null),
-        )
-      })
+    const width = el.clientWidth
+    const height = el.clientHeight
 
-    let cancelled = false
-    let cleanup = null
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0x000000)
 
-    Promise.all(faceUrls.map((u) => loadTexture(u))).then((textures) => {
-      if (cancelled || !containerRef.current) return
+    const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 1000)
+    camera.position.set(0, 0, 9)
 
-      const width = el.clientWidth
-      const height = el.clientHeight
+    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer.setSize(width, height)
+    el.innerHTML = ''
+    el.appendChild(renderer.domElement)
 
-      const scene = new THREE.Scene()
-      scene.background = new THREE.Color(0x000000)
+    const light = new THREE.PointLight(0xffffff, 1.2)
+    light.position.set(2, 4, 6)
+    scene.add(light)
+    scene.add(new THREE.AmbientLight(0xffffff, 0.4))
 
-      const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 1000)
-      camera.position.set(0, 0, 9)
-
-      const renderer = new THREE.WebGLRenderer({ antialias: true })
-      renderer.setSize(width, height)
-      el.innerHTML = ''
-      el.appendChild(renderer.domElement)
-
-      const light = new THREE.PointLight(0xffffff, 1.2)
-      light.position.set(2, 4, 6)
-      scene.add(light)
-      scene.add(new THREE.AmbientLight(0xffffff, 0.4))
-
-      const materials = textures.map((tex) => {
-        const mat = new THREE.MeshBasicMaterial({
+    // 先用纯色材质快速显示立方体，纹理加载好后再逐面替换
+    const materials = faceUrls.map(
+      () =>
+        new THREE.MeshBasicMaterial({
           color: 0xffffff,
           transparent: true,
-        })
-        if (tex) {
+        }),
+    )
+
+    const geometry = new THREE.BoxGeometry(2.0, 2.0, 2.0)
+    const cube = new THREE.Mesh(geometry, materials)
+    scene.add(cube)
+
+    let t = 0
+    let frameId
+    const animate = () => {
+      t += 0.005
+      cube.rotation.y = t * 0.8
+      cube.rotation.x = Math.sin(t * 0.6) * 0.4
+      camera.position.x = Math.sin(t * 0.4) * 0.4
+      camera.position.y = Math.sin(t * 0.3) * 0.25
+      camera.lookAt(0, 0, 0)
+      renderer.render(scene, camera)
+      frameId = requestAnimationFrame(animate)
+    }
+    animate()
+
+    const handleResize = () => {
+      if (!containerRef.current) return
+      const w = containerRef.current.clientWidth
+      const h = containerRef.current.clientHeight
+      camera.aspect = w / h
+      camera.updateProjectionMatrix()
+      renderer.setSize(w, h)
+    }
+    window.addEventListener('resize', handleResize)
+
+    // 按面逐个异步加载纹理，加载完成后替换材质贴图
+    faceUrls.forEach((url, index) => {
+      if (!url) return
+      loader.load(
+        url,
+        (tex) => {
+          tex.colorSpace = THREE.SRGBColorSpace
+          const mat = materials[index]
           mat.map = tex
           mat.needsUpdate = true
-        }
-        return mat
-      })
-
-      const geometry = new THREE.BoxGeometry(2.0, 2.0, 2.0)
-      const cube = new THREE.Mesh(geometry, materials)
-      scene.add(cube)
-
-      let t = 0
-      let frameId
-      const animate = () => {
-        t += 0.005
-        cube.rotation.y = t * 0.8
-        cube.rotation.x = Math.sin(t * 0.6) * 0.4
-        camera.position.x = Math.sin(t * 0.4) * 0.4
-        camera.position.y = Math.sin(t * 0.3) * 0.25
-        camera.lookAt(0, 0, 0)
-        renderer.render(scene, camera)
-        frameId = requestAnimationFrame(animate)
-      }
-      animate()
-
-      const handleResize = () => {
-        if (!containerRef.current) return
-        const w = containerRef.current.clientWidth
-        const h = containerRef.current.clientHeight
-        camera.aspect = w / h
-        camera.updateProjectionMatrix()
-        renderer.setSize(w, h)
-      }
-      window.addEventListener('resize', handleResize)
-
-      cleanup = () => {
-        cancelAnimationFrame(frameId)
-        window.removeEventListener('resize', handleResize)
-        renderer.dispose()
-        geometry.dispose()
-        materials.forEach((m) => m.dispose())
-        if (containerRef.current) {
-          containerRef.current.innerHTML = ''
-        }
-      }
-
-      if (cancelled && cleanup) {
-        cleanup()
-      }
+        },
+        undefined,
+        () => {
+          // 加载失败保持纯色，不影响整体效果
+        },
+      )
     })
 
     return () => {
-      cancelled = true
-      if (cleanup) {
-        cleanup()
+      cancelAnimationFrame(frameId)
+      window.removeEventListener('resize', handleResize)
+      renderer.dispose()
+      geometry.dispose()
+      materials.forEach((m) => m.dispose())
+      if (containerRef.current) {
+        containerRef.current.innerHTML = ''
       }
     }
   }, [card.images, phase])
