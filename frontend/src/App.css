@@ -127,6 +127,38 @@ body {
   color: #fff;
 }
 
+/* 开发对比：定稿后删除整块 */
+.viz-mode-switch {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: max(10px, env(safe-area-inset-left));
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 143, 179, 0.45);
+  pointer-events: auto;
+}
+
+.viz-mode-label {
+  font-size: 11px;
+  color: #ffb8d0;
+  white-space: nowrap;
+}
+
+.viz-mode-select {
+  font-size: 12px;
+  color: #fff;
+  background: rgba(40, 20, 35, 0.95);
+  border: 1px solid #ff7aa9;
+  border-radius: 8px;
+  padding: 4px 8px;
+  max-width: 120px;
+}
+
 .three-full {
   position: absolute;
   inset: 0;

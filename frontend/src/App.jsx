@@ -306,6 +306,7 @@ function MakerView({ id, onCreated }) {
 
 function PlayView({ card, error, onRequestEdit }) {
   const [phase, setPhase] = useState('cube') // 'cube' | 'text'
+  // 最终效果：固定使用「礼盒六面」
   const audioRef = useRef(null)
   const containerRef = useRef(null)
   const longPressTimer = useRef(null)
@@ -335,7 +336,6 @@ function PlayView({ card, error, onRequestEdit }) {
     }
     if (!containerRef.current) return
     const el = containerRef.current
-
     const loader = new THREE.TextureLoader()
     const urls = card.images || []
     const faceUrls = []
@@ -343,11 +343,11 @@ function PlayView({ card, error, onRequestEdit }) {
       faceUrls.push(urls.length ? `${API_BASE}${urls[i % urls.length]}` : '')
     }
 
-    const width = el.clientWidth
-    const height = el.clientHeight
+    const width = el.clientWidth || 300
+    const height = el.clientHeight || 500
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x000000)
+    scene.background = new THREE.Color(0x050308)
 
     const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 1000)
     camera.position.set(0, 0, 9)
@@ -357,37 +357,14 @@ function PlayView({ card, error, onRequestEdit }) {
     el.innerHTML = ''
     el.appendChild(renderer.domElement)
 
-    const light = new THREE.PointLight(0xffffff, 1.2)
-    light.position.set(2, 4, 6)
-    scene.add(light)
-    scene.add(new THREE.AmbientLight(0xffffff, 0.4))
+    const keyLight = new THREE.PointLight(0xffffff, 1.15)
+    keyLight.position.set(5, 6, 8)
+    scene.add(keyLight)
+    scene.add(new THREE.AmbientLight(0xffffff, 0.35))
 
-    // 先用纯色材质快速显示立方体，纹理加载好后再逐面替换
-    const materials = faceUrls.map(
-      () =>
-        new THREE.MeshBasicMaterial({
-          color: 0xffffff,
-          transparent: true,
-        }),
-    )
-
-    const geometry = new THREE.BoxGeometry(2.0, 2.0, 2.0)
-    const cube = new THREE.Mesh(geometry, materials)
-    scene.add(cube)
-
+    const disposables = { geometries: [], materials: [] }
+    let frameId = 0
     let t = 0
-    let frameId
-    const animate = () => {
-      t += 0.005
-      cube.rotation.y = t * 0.8
-      cube.rotation.x = Math.sin(t * 0.6) * 0.4
-      camera.position.x = Math.sin(t * 0.4) * 0.4
-      camera.position.y = Math.sin(t * 0.3) * 0.25
-      camera.lookAt(0, 0, 0)
-      renderer.render(scene, camera)
-      frameId = requestAnimationFrame(animate)
-    }
-    animate()
 
     const handleResize = () => {
       if (!containerRef.current) return
@@ -399,32 +376,135 @@ function PlayView({ card, error, onRequestEdit }) {
     }
     window.addEventListener('resize', handleResize)
 
-    // 按面逐个异步加载纹理，加载完成后替换材质贴图
-    faceUrls.forEach((url, index) => {
+    const loadTex = (url, mat) => {
       if (!url) return
       loader.load(
         url,
         (tex) => {
           tex.colorSpace = THREE.SRGBColorSpace
-          const mat = materials[index]
           mat.map = tex
           mat.needsUpdate = true
         },
         undefined,
-        () => {
-          // 加载失败保持纯色，不影响整体效果
-        },
+        () => {},
       )
-    })
+    }
 
+    /** —— 礼盒模式：外层六面规整 + 中心小立方体 + 舞台光效 —— */
+    {
+      // 外层：规整六面，间隔拉大，只做横向旋转
+      const outer = new THREE.Group()
+      scene.add(outer)
+      // 外层礼盒围成的图片大小与间距，可按需微调
+      const shellDistance = 2.3 // 礼盒离中心的距离，越大缝隙越大
+      const faceSize = 2.4 // 礼盒六面的宽高
+      const shellCfg = [
+        [shellDistance, 0, 0, 0, -Math.PI / 2, 0], // 右
+        [-shellDistance, 0, 0, 0, Math.PI / 2, 0], // 左
+        [0, shellDistance, 0, Math.PI / 2, 0, 0], // 上
+        [0, -shellDistance, 0, -Math.PI / 2, 0, 0], // 下
+        [0, 0, shellDistance, 0, 0, 0], // 前
+        [0, 0, -shellDistance, 0, Math.PI, 0], // 后
+      ]
+      shellCfg.forEach(([px, py, pz, rx, ry, rz], i) => {
+        const geo = new THREE.PlaneGeometry(faceSize, faceSize)
+        disposables.geometries.push(geo)
+        const mat = new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.96,
+          side: THREE.DoubleSide,
+        })
+        disposables.materials.push(mat)
+        const mesh = new THREE.Mesh(geo, mat)
+        mesh.position.set(px, py, pz)
+        mesh.rotation.set(rx, ry, rz)
+        outer.add(mesh)
+        loadTex(faceUrls[i], mat)
+      })
+
+      // 远处少量星点，增加空间感
+      const starGeo = new THREE.BufferGeometry()
+      const starCount = 120
+      const starPositions = new Float32Array(starCount * 3)
+      const starRadius = 20
+      const starMinRadius = 14 // 保证星星离礼盒有一定距离，不会太靠近
+      for (let i = 0; i < starCount; i++) {
+        const idx = i * 3
+        const theta = Math.random() * Math.PI * 2
+        const phi = (Math.random() - 0.5) * (Math.PI / 2)
+        const rand = Math.random()
+        const r = starMinRadius + (starRadius - starMinRadius) * rand
+        starPositions[idx] = r * Math.cos(phi) * Math.cos(theta)
+        starPositions[idx + 1] = r * Math.sin(phi)
+        starPositions[idx + 2] = r * Math.cos(phi) * Math.sin(theta)
+      }
+      starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3))
+      disposables.geometries.push(starGeo)
+      const starMat = new THREE.PointsMaterial({
+        color: 0xffffff, // 白色星星
+        size: 0.12,
+        transparent: true,
+        opacity: 0.9,
+      })
+      disposables.materials.push(starMat)
+      const stars = new THREE.Points(starGeo, starMat)
+      scene.add(stars)
+
+      // 中心小立方体礼物盒
+      const innerMats = faceUrls.map(
+        () =>
+          new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+          }),
+      )
+      innerMats.forEach((m) => disposables.materials.push(m))
+      const innerGeo = new THREE.BoxGeometry(1.4, 1.4, 1.4)
+      disposables.geometries.push(innerGeo)
+      const innerCube = new THREE.Mesh(innerGeo, innerMats)
+      innerCube.position.set(0, 0, 0.4)
+      scene.add(innerCube)
+      faceUrls.forEach((url, i) => loadTex(url, innerMats[i]))
+
+      const animate = () => {
+        t += 0.005
+        // 外层礼盒：匀速横向
+        outer.rotation.y = t * 0.9
+
+        // 小立方体：匀速绕 Y，自慢绕 X，六面都会轮流出现
+        innerCube.rotation.y = t * 1.1              // 主自转
+        innerCube.rotation.x = t * 0.35             // 叠加一个慢速俯仰
+        innerCube.rotation.z = Math.sin(t * 0.6) * 0.15 // 轻微摇摆，避免太机械
+
+        const breathe = 1 + Math.sin(t * 1.7) * 0.06
+        innerCube.scale.set(breathe, breathe, breathe)
+        // 星点闪烁：在 0.2~1.0 之间明显变化
+        const flicker = 0.5 + 0.5 * Math.sin(t * 3.0)
+        starMat.opacity = 0.2 + 0.8 * flicker
+
+        camera.position.x = Math.sin(t * 0.18) * 0.7   // 横向稍大一点
+        camera.position.y = Math.sin(t * 0.12) * 0.18  // 上下幅度更小
+        camera.position.z = 15  
+        camera.lookAt(0, 0, 0.2)
+        renderer.render(scene, camera)
+        frameId = requestAnimationFrame(animate)
+      }
+      animate()
+    }
+
+    const mountEl = el
     return () => {
       cancelAnimationFrame(frameId)
       window.removeEventListener('resize', handleResize)
+      disposables.geometries.forEach((g) => g.dispose())
+      disposables.materials.forEach((m) => {
+        if (m.map) m.map.dispose()
+        m.dispose()
+      })
       renderer.dispose()
-      geometry.dispose()
-      materials.forEach((m) => m.dispose())
-      if (containerRef.current) {
-        containerRef.current.innerHTML = ''
+      if (mountEl) {
+        mountEl.innerHTML = ''
       }
     }
   }, [card.images, phase])
