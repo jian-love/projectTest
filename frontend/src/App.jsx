@@ -8,7 +8,7 @@ const API_BASE = ''
 function useQueryId() {
   const search = window.location.search
   const params = useMemo(() => new URLSearchParams(search), [search])
-  const id = params.get('id') || 'demo001'
+  const id = params.get('id')
   return id
 }
 
@@ -16,6 +16,7 @@ function App() {
   const id = useQueryId()
   const [loading, setLoading] = useState(true)
   const [card, setCard] = useState(null)
+  const [hasAccess, setHasAccess] = useState(false)
   const [error, setError] = useState('')
   const [viewMode, setViewMode] = useState('auto') // auto | edit
 
@@ -26,9 +27,15 @@ function App() {
         const data = await res.json()
         if (data.exists && data.card) {
           setCard(data.card)
+          setHasAccess(true)
+        }
+        if (!data.exists) {
+          setCard(null)
+          setHasAccess(false)
         }
       } catch {
         setError('加载失败，请稍后重试')
+        setHasAccess(false)
       } finally {
         setLoading(false)
       }
@@ -49,6 +56,17 @@ function App() {
 
   const isEmptyCard =
     !card || !card.images || !Array.isArray(card.images) || card.images.length === 0
+
+  if (!hasAccess) {
+    return (
+      <div className="page">
+        <div className="card">
+          <div className="title">无效卡片</div>
+          <div className="sub">此卡片尚未开通或 ID 不正确，请使用购买后获取的链接。</div>
+        </div>
+      </div>
+    )
+  }
 
   if (viewMode === 'edit' || isEmptyCard) {
     return (
@@ -180,6 +198,8 @@ function MakerView({ id, onCreated }) {
     }
     const form = new FormData()
     form.append('file', toUpload, toUpload.name || file.name)
+    // 安全约束：仅允许上传到服务器预留的卡片 id
+    form.append('id', id)
     const res = await fetch(`${API_BASE}/api/upload`, {
       method: 'POST',
       body: form,
@@ -203,6 +223,8 @@ function MakerView({ id, onCreated }) {
       if (music) {
         const form = new FormData()
         form.append('file', music)
+        // 安全约束：仅允许提取到服务器预留的卡片 id
+        form.append('id', id)
         const res = await fetch(`${API_BASE}/api/extract-audio`, {
           method: 'POST',
           body: form,

@@ -38,7 +38,12 @@ function readCards() {
   if (!fs.existsSync(DATA_FILE)) return {};
   try {
     const raw = fs.readFileSync(DATA_FILE, 'utf-8');
-    return raw ? JSON.parse(raw) : {};
+    const cards = raw ? JSON.parse(raw) : {};
+    // 兼容旧数据：如果 reserved 字段缺失，则默认视为已预留（避免你之前生成的 id 全失效）
+    Object.values(cards).forEach((card) => {
+      if (card && card.reserved === undefined) card.reserved = true;
+    });
+    return cards;
   } catch {
     return {};
   }
@@ -83,7 +88,7 @@ app.get('/api/card', (req, res) => {
   if (!id) return res.status(400).json({ error: 'missing id' });
   const cards = readCards();
   const card = cards[id];
-  if (!card) {
+  if (!card || card.reserved !== true) {
     return res.json({ exists: false });
   }
   res.json({ exists: true, card });
@@ -94,7 +99,7 @@ app.post('/api/new-card', (req, res) => {
   const cards = readCards();
   const id = generateId(cards);
   // 先占个位，内容为空，防止重复生成同 id
-  cards[id] = { images: [], musicUrl: '', messages: [] };
+  cards[id] = { reserved: true, images: [], musicUrl: '', messages: [] };
   writeCards(cards);
 
   const origin =
@@ -117,6 +122,9 @@ app.post('/api/card', (req, res) => {
   // 业务约束：一个资源只属于一个卡片
   // 因此在用户点击「修改」并保存时，直接删除该 id 旧卡片下的所有资源文件
   const old = cards[id];
+  if (!old || old.reserved !== true) {
+    return res.status(403).json({ error: '无效卡片 id：未开通或不存在' });
+  }
   if (old) {
     const oldFiles = []
       .concat(old.images || [])
@@ -138,15 +146,36 @@ app.post('/api/card', (req, res) => {
   }
 
   // 写入新内容
-  cards[id] = { images, musicUrl, messages };
+  cards[id] = { ...old, reserved: true, images, musicUrl, messages };
   writeCards(cards);
   // 全量清理：删除所有未被任何卡片引用的上传文件
   cleanupUploads(cards);
   res.json({ ok: true });
 });
 
+function deleteFileIfExists(p) {
+  try {
+    if (p && fs.existsSync(p)) fs.unlinkSync(p);
+  } catch {
+    // ignore
+  }
+}
+
 app.post('/api/upload', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
+  const id = req.body.id || req.query.id;
+  if (!id) {
+    deleteFileIfExists(req.file.path);
+    return res.status(403).json({ error: '无效卡片 id' });
+  }
+
+  const cards = readCards();
+  const card = cards[id];
+  if (!card || card.reserved !== true) {
+    deleteFileIfExists(req.file.path);
+    return res.status(403).json({ error: '无效卡片 id：未开通或不存在' });
+  }
+
   const urlPath = `/uploads/${req.file.filename}`;
   res.json({ url: urlPath });
 });
@@ -154,6 +183,18 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 // 从上传的视频或音频中提取音频，统一转成 mp3
 app.post('/api/extract-audio', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
+  const id = req.body.id || req.query.id;
+  if (!id) {
+    deleteFileIfExists(req.file.path);
+    return res.status(403).json({ error: '无效卡片 id' });
+  }
+
+  const cards = readCards();
+  const card = cards[id];
+  if (!card || card.reserved !== true) {
+    deleteFileIfExists(req.file.path);
+    return res.status(403).json({ error: '无效卡片 id：未开通或不存在' });
+  }
 
   const inputPath = req.file.path;
   const baseName = path.parse(req.file.filename).name;
