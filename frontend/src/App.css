@@ -164,6 +164,33 @@ body {
   inset: 0;
 }
 
+.text-mode-switch {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+  z-index: 30;
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.text-mode-switch button {
+  border: none;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #ffd4ff;
+  background: transparent;
+  cursor: pointer;
+}
+
+.text-mode-switch button.active {
+  background: #ff7abf;
+  color: #fff;
+}
+
 .msg {
   min-height: 32px;
   font-size: 14px;
@@ -213,11 +240,26 @@ body {
   background: radial-gradient(circle at center, rgba(30, 0, 40, 0.85), transparent);
 }
 
+.meteors {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.meteors canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .text-rain-line {
   position: absolute;
   white-space: nowrap;
   left: 50%;
   transform: translate3d(-50%, 0, -200px) scale(0.6);
+  z-index: 1;
   color: #f7d3ff;
   font-size: 26px;
   text-shadow:
@@ -238,5 +280,109 @@ body {
   to {
     transform: translate3d(-50%, -10%, 80px) scale(2.0);
     opacity: 0;
+  }
+}
+
+.text-orbit {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.orbit-line {
+  position: absolute;
+  white-space: nowrap;
+  color: #ffe9ff;
+  font-size: 24px;
+  text-shadow:
+    0 0 8px rgba(255, 255, 255, 0.85),
+    0 0 20px rgba(255, 128, 255, 0.85);
+}
+
+.orbit-top {
+  top: 18%;
+  left: 50%;
+  transform-origin: center;
+  animation: orbitTop 14s linear infinite;
+}
+
+.orbit-bottom {
+  top: 70%;
+  left: 50%;
+  transform-origin: center;
+  animation: orbitBottom 18s linear infinite;
+}
+
+.orbit-left {
+  top: 45%;
+  left: 15%;
+  transform-origin: center;
+  animation: orbitLeft 16s linear infinite;
+}
+
+.orbit-right {
+  top: 45%;
+  right: 15%;
+  transform-origin: center;
+  animation: orbitRight 20s linear infinite;
+}
+
+@keyframes orbitTop {
+  0% {
+    transform: translate3d(-50%, -50%, 0) scale(0.6);
+    opacity: 0.4;
+  }
+  40% {
+    transform: translate3d(-5%, -60%, 0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(-120%, -40%, 0) scale(0.6);
+    opacity: 0.2;
+  }
+}
+
+@keyframes orbitBottom {
+  0% {
+    transform: translate3d(-50%, -50%, 0) scale(0.6);
+    opacity: 0.4;
+  }
+  40% {
+    transform: translate3d(0%, -20%, 0) scale(1.05);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(60%, -30%, 0) scale(0.6);
+    opacity: 0.2;
+  }
+}
+
+@keyframes orbitLeft {
+  0% {
+    transform: translate3d(0, -50%, 0) scale(0.5);
+    opacity: 0.3;
+  }
+  50% {
+    transform: translate3d(40%, -60%, 0) scale(1.05);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(80%, -40%, 0) scale(0.5);
+    opacity: 0.2;
+  }
+}
+
+@keyframes orbitRight {
+  0% {
+    transform: translate3d(0, -50%, 0) scale(0.5);
+    opacity: 0.3;
+  }
+  50% {
+    transform: translate3d(-40%, -40%, 0) scale(1.05);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(-80%, -60%, 0) scale(0.5);
+    opacity: 0.2;
   }
 }

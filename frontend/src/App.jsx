@@ -306,7 +306,6 @@ function MakerView({ id, onCreated }) {
 
 function PlayView({ card, error, onRequestEdit }) {
   const [phase, setPhase] = useState('cube') // 'cube' | 'text'
-  // 最终效果：固定使用「礼盒六面」
   const audioRef = useRef(null)
   const containerRef = useRef(null)
   const longPressTimer = useRef(null)
@@ -562,17 +561,20 @@ function PlayView({ card, error, onRequestEdit }) {
 function TextRain({ messages }) {
   const [seed] = useState(() => Math.random())
 
-  // 基于固定 seed 生成随机文字雨，保证一次挂载期间稳定
-  const items = useMemo(() => {
-    const baseArr =
-      messages && messages.length ? messages : ['在一起', '喜欢你', '永远爱你']
+  const baseArr = useMemo(
+    () => (messages && messages.length ? messages : ['在一起', '喜欢你', '永远爱你', '一直走下去']),
+    [messages],
+  )
 
-    const rows = 50
+  const meteorSeed = useMemo(() => seed, [seed])
+
+  // 瀑布模式：基于固定 seed 生成随机文字雨，保证一次挂载期间稳定
+  const items = useMemo(() => {
+    const rows = 40
     const list = []
     let current = seed
 
     const nextRandom = () => {
-      // 简单 LCG 伪随机，避免直接调用 Math.random
       current = (current * 9301 + 49297) % 233280
       return current / 233280
     }
@@ -581,16 +583,17 @@ function TextRain({ messages }) {
       const text = baseArr[Math.floor(nextRandom() * baseArr.length)]
       list.push({
         text,
-        delay: i * 80,
+        delay: i * 90,
         offset: (nextRandom() - 0.5) * 60, // 左右更大范围
-        topBase: 10 + nextRandom() * 70, // 随机起始高度
+        topBase: 5 + nextRandom() * 80, // 随机起始高度
       })
     }
     return list
-  }, [messages, seed])
+  }, [baseArr, seed])
 
   return (
     <div className="text-rain">
+      <Meteors seed={meteorSeed} />
       {items.map((item, i) => (
         <div
           key={i}
@@ -604,6 +607,188 @@ function TextRain({ messages }) {
           {item.text}
         </div>
       ))}
+    </div>
+  )
+}
+
+function Meteors({ seed }) {
+  const canvasRef = useRef(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const parent = canvas.parentElement
+    if (!parent) return
+
+    // 用 seed 做一个轻量随机发生器（保证同一张卡进入文字阶段时“分布大致一致”）
+    let s = Math.floor((seed || 0.5) * 1e9) + 1
+    const nextRandom = () => {
+      s = (s * 9301 + 49297) % 233280
+      return s / 233280
+    }
+
+    let dpr = Math.min(2, window.devicePixelRatio || 1)
+    let w = parent.clientWidth
+    let h = parent.clientHeight
+    canvas.width = Math.floor(w * dpr)
+    canvas.height = Math.floor(h * dpr)
+    canvas.style.width = `${w}px`
+    canvas.style.height = `${h}px`
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+
+    const meteors = []
+    // 总数上限：5 条，尾巴更短更精致
+    const maxMeteors = 5
+    const tailPoints = 10
+
+    const spawnMeteor = () => {
+      if (meteors.length >= maxMeteors) return
+
+      // 出生点随机，但都在“右上”较分散区域；
+      // 轨迹方向统一：通过固定速度方向比（vx/vy 比例）保证斜率一致
+      // 限制坐标范围，减少“散开感”，但仍避免过于集中
+      const startX = w * (0.58 + nextRandom() * 0.36) // 右侧更宽：不集中
+      const startY = h * (-0.22 + nextRandom() * 0.33) // 上方更宽：不贴一条线
+
+      // 速度放慢：life 越大越慢
+      const life = 1.4 + nextRandom() * 1.1 // 秒
+      // 统一从“右上 -> 左下”的方向：比例保持不变 => 轨迹斜率一致
+      const vx = (-0.95 * w) / life
+      const vy = (1.15 * h) / life
+
+      // 更小更细
+      const thickness = 0.6 + nextRandom() * 0.8
+
+      meteors.push({
+        x: startX,
+        y: startY,
+        vx,
+        vy,
+        age: 0,
+        life,
+        thickness,
+        trail: [],
+        sparked: false,
+      })
+    }
+
+    let last = performance.now()
+    let spawnTimer = 0
+    const resetSpawnTimer = () => {
+      // 控制密度：间隔越小，条数越多
+      spawnTimer = 420 + nextRandom() * 360 // ms（更慢出）
+    }
+    resetSpawnTimer()
+
+    let raf = 0
+    const tick = (now) => {
+      const dt = Math.min(0.033, (now - last) / 1000)
+      last = now
+
+      // resize（不频繁监听，只在帧里轻量检查）
+      const nw = parent.clientWidth
+      const nh = parent.clientHeight
+      if (nw !== w || nh !== h) {
+        w = nw
+        h = nh
+        dpr = Math.min(2, window.devicePixelRatio || 1)
+        canvas.width = Math.floor(w * dpr)
+        canvas.height = Math.floor(h * dpr)
+        canvas.style.width = `${w}px`
+        canvas.style.height = `${h}px`
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      }
+
+      spawnTimer -= dt * 1000
+      if (spawnTimer <= 0) {
+        spawnMeteor()
+        // 用上限控制条数，不额外爆发生成，避免看起来“乱飞”
+        resetSpawnTimer()
+      }
+
+      ctx.clearRect(0, 0, w, h)
+
+      ctx.globalCompositeOperation = 'lighter'
+
+      for (let i = meteors.length - 1; i >= 0; i--) {
+        const m = meteors[i]
+        m.age += dt
+        m.x += m.vx * dt
+        m.y += m.vy * dt
+
+        m.trail.push({ x: m.x, y: m.y })
+        if (m.trail.length > tailPoints) m.trail.shift()
+
+        const p = m.age / m.life
+        if (p >= 1) {
+          meteors.splice(i, 1)
+          continue
+        }
+
+        const headAlpha = Math.max(0, 1 - p)
+
+        // （已移除火花）
+
+        // 尾巴（从旧到新，逐渐变亮）
+        ctx.lineCap = 'round' // B：圆头拖尾
+        for (let tIdx = 1; tIdx < m.trail.length; tIdx++) {
+          const p0 = m.trail[tIdx - 1]
+          const p1 = m.trail[tIdx]
+          const tt = tIdx / (m.trail.length - 1) // 0..1
+          // B：末端更亮更“彗星感”
+          const a = headAlpha * Math.pow(tt, 1.2)
+          const lw = m.thickness * (0.2 + 1.2 * tt)
+          ctx.lineWidth = lw
+          // 尾巴从白到粉紫渐变，视觉更“能量流”
+          const c1 = { r: 255, g: 255, b: 255 } // 头附近偏白
+          const c2 = { r: 255, g: 140, b: 240 } // 尾巴偏粉紫
+          const r = c1.r + (c2.r - c1.r) * tt
+          const g = c1.g + (c2.g - c1.g) * tt
+          const b = c1.b + (c2.b - c1.b) * tt
+          ctx.strokeStyle = `rgba(${r.toFixed(0)},${g.toFixed(0)},${b.toFixed(0)},${a})`
+          ctx.beginPath()
+          ctx.moveTo(p0.x, p0.y)
+          ctx.lineTo(p1.x, p1.y)
+          ctx.stroke()
+        }
+
+        // A：头部径向光晕（亮点+柔边）
+        const r = m.thickness * (1.0 + 1.2 * headAlpha)
+        const haloR = r * 2.6
+        const grad = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, haloR)
+        grad.addColorStop(0, `rgba(255,255,255,${0.95 * headAlpha})`)
+        grad.addColorStop(0.35, `rgba(255,255,255,${0.45 * headAlpha})`)
+        grad.addColorStop(1, `rgba(255,255,255,0)`)
+        ctx.fillStyle = grad
+        ctx.beginPath()
+        ctx.arc(m.x, m.y, haloR, 0, Math.PI * 2)
+        ctx.fill()
+
+        // 核心小点（更“聚焦”）
+        ctx.fillStyle = `rgba(255,255,255,${0.9 * headAlpha})`
+        ctx.beginPath()
+        ctx.arc(m.x, m.y, r, 0, Math.PI * 2)
+        ctx.fill()
+      }
+
+      // （已移除火花）
+
+      ctx.globalCompositeOperation = 'source-over'
+      raf = requestAnimationFrame(tick)
+    }
+
+    raf = requestAnimationFrame(tick)
+    return () => {
+      cancelAnimationFrame(raf)
+    }
+  }, [seed])
+
+  return (
+    <div className="meteors" aria-hidden="true">
+      <canvas ref={canvasRef} />
     </div>
   )
 }
