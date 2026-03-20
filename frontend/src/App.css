@@ -164,6 +164,200 @@ body {
   inset: 0;
 }
 
+.ring-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 1000px;
+  background:
+    radial-gradient(circle at center, rgba(33, 212, 253, 0.10), rgba(183, 33, 255, 0.06) 45%, #000 72%);
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.ring-stage.ring-stage-show {
+  opacity: 1;
+}
+
+.ring-spin {
+  position: relative;
+  width: min(72vw, 520px);
+  height: min(72vw, 520px);
+  --ring-radius: min(260px, 42vw);
+  transform-style: preserve-3d;
+  transform: rotateX(-30deg);
+  animation: ringSpin 18s linear infinite;
+  animation-play-state: paused;
+}
+
+.ring-spin.playing {
+  animation-play-state: running;
+}
+
+.ring-face {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--ring-img-size, min(28vw, 200px));
+  height: var(--ring-img-size, min(28vw, 200px));
+  transform-style: preserve-3d;
+  /* React 不再直接控制每张图的 transform，全部交给 JS + transition 做动画 */
+  transform: translate(-50%, -50%) translateZ(0px);
+  will-change: transform;
+  z-index: 1;
+}
+
+.ring-face::before {
+  content: '';
+  position: absolute;
+  inset: -16px;
+  border-radius: 16px;
+  background:
+    radial-gradient(
+      circle at 50% 45%,
+      rgba(33, 212, 253, 0.38) 0%,
+      rgba(183, 33, 255, 0.22) 42%,
+      transparent 68%
+    );
+  filter: blur(10px);
+  opacity: 0;
+  transition: opacity 250ms ease;
+  transform: translateZ(-1px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ring-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+  box-shadow:
+    0 0 14px rgba(255, 255, 255, 0.06),
+    0 0 26px rgba(33, 212, 253, 0.14),
+    0 0 46px rgba(183, 33, 255, 0.10);
+  filter:
+    saturate(1.12)
+    drop-shadow(0 0 10px rgba(33, 212, 253, 0.28))
+    drop-shadow(0 0 18px rgba(183, 33, 255, 0.20));
+  -webkit-box-reflect: below 14px linear-gradient(transparent 0%, transparent 35%, rgba(0, 0, 0, 0.65) 100%);
+  position: relative;
+  z-index: 1;
+}
+
+.ring-img-placeholder {
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(33, 212, 253, 0.10), rgba(183, 33, 255, 0.08) 50%, rgba(255, 255, 255, 0.06));
+  border-radius: 10px;
+}
+
+@keyframes ringSpin {
+  from {
+    transform: rotateX(-30deg) rotateY(0deg);
+  }
+  to {
+    transform: rotateX(-30deg) rotateY(360deg);
+  }
+}
+
+.play-start-btn {
+  position: absolute;
+  left: 50%;
+  top: 55%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  padding: 12px 20px;
+  border-radius: 999px;
+  border: none;
+  background: linear-gradient(90deg, #ff4f8b, #ff7aa9);
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: 0 14px 40px rgba(255, 79, 139, 0.25);
+}
+
+/* 源码风格按钮（更炫的渐变边框光效） */
+@property --d {
+  syntax: '<angle>';
+  inherits: true;
+  initial-value: 0deg;
+}
+
+.click_me {
+  width: min(72vw, 240px);
+  aspect-ratio: 1 / 1;
+  font-size: 18px;
+  color: #fff;
+  background: rgba(10, 18, 33, 0.30);
+  border: none;
+  border-radius: 18px;
+  position: absolute;
+  left: 50%;
+  top: 55%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  cursor: pointer;
+  --d: 0deg;
+  transition: 0.3s;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 18px 60px rgba(33, 212, 253, 0.10),
+    0 18px 60px rgba(183, 33, 255, 0.10);
+}
+
+.click_me:before {
+  content: '';
+  position: absolute;
+  inset: -10px;
+  padding: 10px;
+  border-radius: 26px;
+  background: conic-gradient(
+    from var(--d),
+    #21d4fd,
+    #0000 30deg 120deg,
+    #b721ff 150deg 180deg,
+    #0000 210deg 300deg,
+    #21d4fd 330deg
+  );
+  z-index: -1;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+.click_me:after {
+  content: '';
+  position: absolute;
+  inset: -120px;
+  background:
+    radial-gradient(80px at left 150px top 120px, #21d4fd 98%, #0000),
+    radial-gradient(80px at right 150px bottom 120px, #b721ff 98%, #0000);
+  filter: blur(60px);
+  opacity: 0.35;
+}
+
+.ring-stage-show .ring-face::before {
+  opacity: 1;
+}
+
+.click_me:before,
+.click_me:after {
+  transition:
+    0.5s,
+    99999s 99999s transform,
+    0s 0s --d;
+}
+
 .text-mode-switch {
   position: absolute;
   top: max(10px, env(safe-area-inset-top));
@@ -236,6 +430,20 @@ body {
   cursor: pointer;
 }
 
+.effect-switch-btn {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  z-index: 10;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid #ffb4cc;
+  background: rgba(0, 0, 0, 0.55);
+  color: #ffbed8;
+  font-size: 11px;
+  cursor: pointer;
+}
+
 .play-edit-btn {
   position: absolute;
   top: 10px;
@@ -253,10 +461,20 @@ body {
 .text-rain {
   position: absolute;
   inset: 0;
-  border-radius: 24px;
+  border-radius: 0;
   overflow: hidden;
   pointer-events: none;
-  background: radial-gradient(circle at center, rgba(30, 0, 40, 0.85), transparent);
+  perspective: 1100px;
+  transform-style: preserve-3d;
+  /* 仅文字特效阶段：上粉-中黑-下粉，强化纵深层次 */
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 1) 74%,
+    rgba(145, 88, 122, 0.52) 84%,
+    rgba(255, 178, 214, 0.72) 94%,
+    rgba(255, 192, 222, 0.8) 100%
+  );
 }
 
 .meteors {
@@ -277,27 +495,58 @@ body {
   position: absolute;
   white-space: nowrap;
   left: 50%;
-  transform: translate3d(-50%, 0, -200px) scale(0.6);
+  transform: translate3d(-50%, 0, -320px) scale(0.45);
   z-index: 1;
   color: #f7d3ff;
-  font-size: 26px;
+  font-size: 18px;
   text-shadow:
     0 0 8px rgba(255, 0, 255, 0.8),
     0 0 18px rgba(255, 0, 255, 0.9);
   opacity: 0;
-  animation: rainIn 5s ease-out infinite;
+  will-change: transform, opacity;
+}
+
+.text-rain-line.burst {
+  animation: rainBurst 2.8s cubic-bezier(0.08, 0.85, 0.2, 1) 1 both;
+}
+
+.text-rain-line.loop {
+  animation: rainIn 5.1s cubic-bezier(0.14, 0.76, 0.2, 1) infinite;
+}
+
+@keyframes rainBurst {
+  from {
+    transform: translate3d(-50%, 200%, -560px) scale(0.07);
+    opacity: 0;
+  }
+  16% {
+    opacity: 1;
+  }
+  36% {
+    opacity: 0.65;
+  }
+  to {
+    transform: translate3d(-50%, -20%, 200px) scale(2.0);
+    opacity: 0;
+  }
 }
 
 @keyframes rainIn {
   from {
-    transform: translate3d(-50%, 140%, -200px) scale(0.3);
+    transform: translate3d(-50%, 185%, -520px) scale(0.09);
     opacity: 0;
   }
-  35% {
+  20% {
     opacity: 1;
   }
+  46% {
+    opacity: 0.5;
+  }
+  62% {
+    opacity: 0;
+  }
   to {
-    transform: translate3d(-50%, -10%, 80px) scale(2.0);
+    transform: translate3d(-50%, -16%, 180px) scale(1.85);
     opacity: 0;
   }
 }

@@ -8,8 +8,9 @@ const API_BASE = ''
 function useQueryId() {
   const search = window.location.search
   const params = useMemo(() => new URLSearchParams(search), [search])
-  const id = params.get('id')
-  return id
+  const idRaw = params.get('id')
+  // NFC 写入/复制可能带空格或大小写不一致，统一做标准化
+  return (idRaw || '').trim().toLowerCase()
 }
 
 function App() {
@@ -22,6 +23,13 @@ function App() {
 
   useEffect(() => {
     async function fetchCard() {
+      if (!id) {
+        setCard(null)
+        setHasAccess(false)
+        setLoading(false)
+        setError('缺少或无效的卡片 id')
+        return
+      }
       try {
         const res = await fetch(`${API_BASE}/api/card?id=${encodeURIComponent(id)}`)
         const data = await res.json()
@@ -159,7 +167,8 @@ function MakerView({ id, onCreated }) {
     if (file) {
       // 允许视频/音频文件，统一作为“提取音乐”的原素材
       // 限制文件大小，避免大文件在弱网环境下频繁上传失败（默认上限 30MB）
-      const maxSize = 8 * 1024 * 1024
+      // 默认上限 30MB：避免录屏/视频稍大就被前端拦截
+      const maxSize = 30 * 1024 * 1024
       if (file.size > maxSize) {
         alert('视频/音频文件过大，建议截取 60 秒以内的片段（小于 30MB）再上传')
         if (e.target) {
@@ -328,15 +337,45 @@ function MakerView({ id, onCreated }) {
 
 function PlayView({ card, error, onRequestEdit }) {
   const [phase, setPhase] = useState('cube') // 'cube' | 'text'
+  // 固定使用圆周照片墙（CSS 3D），不再使用 Three.js 的礼盒/圆环分支
+  const [effectMode] = useState('ringCss') // 'ringCss'
   const [autoplayBlocked, setAutoplayBlocked] = useState(false)
+  const [effectStarted, setEffectStarted] = useState(false)
+  const [ringPlaying, setRingPlaying] = useState(false)
   const audioRef = useRef(null)
   const containerRef = useRef(null)
+  const clickMeBtnRef = useRef(null)
   const longPressTimer = useRef(null)
   const longPressActive = useRef(false)
 
+  // 按钮边缘“流光”持续流动（不使用 CSS infinite 循环，避免周期重置感）
+  useEffect(() => {
+    const el = clickMeBtnRef.current
+    if (!el) return
+    if (effectStarted) return
+
+    // 让 360deg 转动用时更长（更慢）：约 6s 一圈
+    const msPer360 = 6000
+    let rafId = 0
+    const start = performance.now()
+
+    const tick = (now) => {
+      const elapsed = now - start
+      const deg = ((elapsed % msPer360) / msPer360) * 360
+      el.style.setProperty('--d', `${deg}deg`)
+      rafId = requestAnimationFrame(tick)
+    }
+
+    rafId = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafId)
+  }, [effectStarted])
+
   // 页面进入时，如果有音乐，尝试自动播放一次
   useEffect(() => {
+    if (!effectStarted) return
     if (!card.musicUrl || !audioRef.current) return
+    // 如果按钮点击已触发播放，则这里无需重复 play
+    if (!audioRef.current.paused) return
     setAutoplayBlocked(false)
     const audio = audioRef.current
     audio.src = `${API_BASE}${card.musicUrl}`
@@ -350,9 +389,10 @@ function PlayView({ card, error, onRequestEdit }) {
         // 浏览器策略禁止自动播放时忽略，用户点击后再播放
         setAutoplayBlocked(true)
       })
-  }, [card.musicUrl])
+  }, [card.musicUrl, effectStarted])
 
   useEffect(() => {
+    if (effectMode === 'ringCss') return
     if (phase !== 'cube') {
       if (containerRef.current) {
         containerRef.current.innerHTML = ''
@@ -388,6 +428,7 @@ function PlayView({ card, error, onRequestEdit }) {
     scene.add(new THREE.AmbientLight(0xffffff, 0.35))
 
     const disposables = { geometries: [], materials: [] }
+    let reflectionAlphaTexture = null
     let frameId = 0
     let t = 0
 
@@ -415,8 +456,92 @@ function PlayView({ card, error, onRequestEdit }) {
       )
     }
 
-    /** —— 礼盒模式：外层六面规整 + 中心小立方体 + 舞台光效 —— */
-    {
+    if (effectMode === 'ring') {
+      // —— 圆周礼盒照片墙：环形摆放 + 底部倒影 —— //
+      const ring = new THREE.Group()
+      scene.add(ring)
+
+      // 倒影淡出：用 alphaMap 由上到下渐隐（让渐变更容易看见）
+      const alphaCanvas = document.createElement('canvas')
+      alphaCanvas.width = 64
+      alphaCanvas.height = 256
+      const ctx = alphaCanvas.getContext('2d')
+      const imageData = ctx.createImageData(alphaCanvas.width, alphaCanvas.height)
+      const w = alphaCanvas.width
+      const h = alphaCanvas.height
+      for (let y = 0; y < h; y++) {
+        // y=0 顶部不透明；y=h-1 底部完全透明
+        const a = 1 - y / (h - 1)
+        // 用平方衰减，接近你之前那版的视觉观感
+        const alpha = Math.max(0, Math.min(1, a * a))
+        for (let x = 0; x < w; x++) {
+          const idx = (y * w + x) * 4
+          imageData.data[idx] = 255
+          imageData.data[idx + 1] = 255
+          imageData.data[idx + 2] = 255
+          imageData.data[idx + 3] = Math.floor(alpha * 255)
+        }
+      }
+      ctx.putImageData(imageData, 0, 0)
+      reflectionAlphaTexture = new THREE.CanvasTexture(alphaCanvas)
+      reflectionAlphaTexture.needsUpdate = true
+
+      const count = Math.max(1, faceUrls.length)
+      const radius = 5.3
+      const planeSize = 2.2
+      const geo = new THREE.PlaneGeometry(planeSize, planeSize)
+      disposables.geometries.push(geo)
+
+      for (let i = 0; i < count; i++) {
+        const ang = (i / count) * Math.PI * 2
+        const px = radius * Math.cos(ang)
+        const pz = radius * Math.sin(ang)
+
+        const baseMat = new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.98,
+          side: THREE.DoubleSide,
+        })
+        disposables.materials.push(baseMat)
+        const mesh = new THREE.Mesh(geo, baseMat)
+        mesh.position.set(px, 0, pz)
+        mesh.lookAt(0, 0, 0)
+        ring.add(mesh)
+        loadTex(faceUrls[i % faceUrls.length], baseMat)
+
+        // 倒影：复制平面并镜像到下方
+        const reflMat = new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.28,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+          alphaMap: reflectionAlphaTexture,
+        })
+        disposables.materials.push(reflMat)
+        const refl = new THREE.Mesh(geo, reflMat)
+        refl.position.set(px, -planeSize * 1.05, pz)
+        refl.rotation.copy(mesh.rotation)
+        refl.scale.y = -1
+        ring.add(refl)
+        loadTex(faceUrls[i % faceUrls.length], reflMat)
+      }
+
+      const animate = () => {
+        t += 0.005
+        ring.rotation.y = t * 0.9
+        ring.rotation.x = Math.sin(t * 0.25) * 0.08
+        camera.position.x = Math.sin(t * 0.2) * 0.8
+        camera.position.y = Math.sin(t * 0.12) * 0.35
+        camera.position.z = 18
+        camera.lookAt(0, 0, 0.2)
+        renderer.render(scene, camera)
+        frameId = requestAnimationFrame(animate)
+      }
+      animate()
+    } else {
+      // —— 礼盒模式：外层六面规整 + 中心小立方体 + 舞台光效 —— //
       // 外层：规整六面，间隔拉大，只做横向旋转
       const outer = new THREE.Group()
       scene.add(outer)
@@ -527,29 +652,74 @@ function PlayView({ card, error, onRequestEdit }) {
         if (m.map) m.map.dispose()
         m.dispose()
       })
+      if (reflectionAlphaTexture) reflectionAlphaTexture.dispose()
       renderer.dispose()
       if (mountEl) {
         mountEl.innerHTML = ''
       }
     }
-  }, [card.images, phase])
+  }, [card.images, phase, effectMode])
 
   const handleTap = () => {
-    // 第一次点击：如果有音乐且尚未播放，只负责「开音乐」
-    if (card.musicUrl && audioRef.current && audioRef.current.paused) {
+    // 只有点击过“播放”按钮后，下一次点击才切换到文字雨
+    if (!effectStarted) return
+    if (phase === 'cube') setPhase('text')
+  }
+
+  const handleStart = (e) => {
+    // React 的 SyntheticEvent 可能在异步回调里失效，所以不要在 rAF 内再用 `e`
+    e?.stopPropagation?.()
+    if (effectStarted) return
+    setEffectStarted(true)
+    // 飞行过程中让“整体转圈”也开始，从观感上更接近源码
+    setRingPlaying(true)
+
+    const rootEl = e?.currentTarget?.closest?.('.play-full') || document
+
+    // 按钮点击里播放音乐，确保满足“用户手势播放”策略
+    if (card.musicUrl && audioRef.current) {
       audioRef.current.src = `${API_BASE}${card.musicUrl}`
       audioRef.current
         .play()
-        .then(() => {
-          setAutoplayBlocked(false)
-        })
-        .catch(() => {})
-      return
+        .then(() => setAutoplayBlocked(false))
+        .catch(() => setAutoplayBlocked(true))
     }
-    // 之后的点击：再负责从立方体切换到文字动效
-    if (phase === 'cube') {
-      setPhase('text')
-    }
+
+    // “源码风格”照片展开动画：利用 CSS transitionDelay 让每张图依次飞向圆周位置
+    requestAnimationFrame(() => {
+      const faces = rootEl.querySelectorAll('.ring-face')
+      if (!faces || faces.length === 0) {
+        return
+      }
+
+      const vw = Math.max(320, window.innerWidth)
+      const radiusPx = Math.min(260, vw * 0.42)
+
+      const len = faces.length
+      const durationMs = 1100
+      const ease = 'cubic-bezier(0.22, 1, 0.36, 1)'
+
+      // 1) 先把所有照片“叠在中间”（略微错开一点点，形成一叠的厚度）
+      const mid = (len - 1) / 2
+      const stackYOffset = 8 // 叠在中间的上下偏移
+      const stackZStep = 16 // 叠在中间的深度偏移
+      faces.forEach((el, i) => {
+        const y = (i - mid) * stackYOffset * 0.35
+        const z = (mid - i) * stackZStep * 0.25
+        const s = Math.max(0.86, 1 - Math.abs(i - mid) * 0.03)
+        el.style.transition = 'none'
+        el.style.transform = `translate(-50%, -50%) translateY(${y}px) translateZ(${z}px) scale(${s})`
+      })
+
+      // 2) 再依次“飞向圆周位置”（transitionDelay 控制先后）
+      faces.forEach((el, i) => {
+        const ang = Number(el.getAttribute('data-angle') || '0')
+        const delayMs = i * 95
+        el.style.transition = `transform ${durationMs}ms ${ease}`
+        el.style.transitionDelay = `${delayMs}ms`
+        el.style.transform = `translate(-50%, -50%) rotateY(${ang}deg) translateZ(${radiusPx}px) scale(1)`
+      })
+    })
   }
 
   const handleLongPressStart = () => {
@@ -570,6 +740,12 @@ function PlayView({ card, error, onRequestEdit }) {
     }
   }
 
+  const renderImageUrls = Array.from({ length: 6 }, (_, i) => {
+    const arr = card.images || []
+    if (!arr.length) return ''
+    return arr[i % arr.length]
+  })
+
   return (
     <div
       className="play-full"
@@ -581,10 +757,34 @@ function PlayView({ card, error, onRequestEdit }) {
       onTouchEnd={handleLongPressEnd}
       onTouchCancel={handleLongPressEnd}
     >
-      <div ref={containerRef} className="three-full" />
+      {phase === 'cube' && (
+        <div className={`ring-stage ${effectStarted ? 'ring-stage-show' : ''}`}>
+          <div className={`ring-spin ${ringPlaying ? 'playing' : ''}`}>
+            {renderImageUrls.map((u, i) => (
+              <div
+                key={`${u}-${i}`}
+                className="ring-face"
+                data-angle={((i * 360) / 6).toString()}
+              >
+                {u ? (
+                  <img className="ring-img" src={`${API_BASE}${u}`} alt="" />
+                ) : (
+                  <div className="ring-img-placeholder" />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!effectStarted && (
+        <button ref={clickMeBtnRef} className="click_me" onClick={handleStart}>
+          Play
+        </button>
+      )}
       {autoplayBlocked && card.musicUrl && (
         <div className="music-hint" aria-hidden="true">
-          轻触屏幕开始播放音乐
+          轻触播放开始音乐
         </div>
       )}
       {phase === 'text' && <TextRain messages={card.messages || []} />}
@@ -604,10 +804,12 @@ function TextRain({ messages }) {
 
   const meteorSeed = useMemo(() => seed, [seed])
 
-  // 瀑布模式：基于固定 seed 生成随机文字雨，保证一次挂载期间稳定
-  const items = useMemo(() => {
-    const rows = 40
-    const list = []
+  // 两层文字雨：开场密集爆发 + 后续持续稀疏循环
+  const rainData = useMemo(() => {
+    const burstRows = 180
+    const loopRows = 62
+    const burstList = []
+    const loopList = []
     let current = seed
 
     const nextRandom = () => {
@@ -615,25 +817,51 @@ function TextRain({ messages }) {
       return current / 233280
     }
 
-    for (let i = 0; i < rows; i++) {
+    for (let i = 0; i < burstRows; i++) {
       const text = baseArr[Math.floor(nextRandom() * baseArr.length)]
-      list.push({
+      burstList.push({
         text,
-        delay: i * 90,
-        offset: (nextRandom() - 0.5) * 60, // 左右更大范围
-        topBase: 5 + nextRandom() * 80, // 随机起始高度
+        // 烟花式：拉长爆发时间窗口，持续更久
+        delay: Math.floor(nextRandom() * 760),
+        offset: (nextRandom() - 0.5) * 94,
+        topBase: 2 + nextRandom() * 92,
       })
     }
-    return list
+
+    for (let i = 0; i < loopRows; i++) {
+      const text = baseArr[Math.floor(nextRandom() * baseArr.length)]
+      loopList.push({
+        text,
+        // 缩短爆发后空档，更快进入持续层
+        delay: 280 + i * 95,
+        offset: (nextRandom() - 0.5) * 82,
+        topBase: 4 + nextRandom() * 88,
+      })
+    }
+
+    return { burstList, loopList }
   }, [baseArr, seed])
 
   return (
     <div className="text-rain">
       <Meteors seed={meteorSeed} />
-      {items.map((item, i) => (
+      {rainData.burstList.map((item, i) => (
         <div
-          key={i}
-          className="text-rain-line"
+          key={`burst-${i}`}
+          className="text-rain-line burst"
+          style={{
+            top: `${item.topBase}%`,
+            animationDelay: `${item.delay}ms`,
+            marginLeft: `${item.offset}%`,
+          }}
+        >
+          {item.text}
+        </div>
+      ))}
+      {rainData.loopList.map((item, i) => (
+        <div
+          key={`loop-${i}`}
+          className="text-rain-line loop"
           style={{
             top: `${item.topBase}%`,
             animationDelay: `${item.delay}ms`,
