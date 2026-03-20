@@ -328,6 +328,7 @@ function MakerView({ id, onCreated }) {
 
 function PlayView({ card, error, onRequestEdit }) {
   const [phase, setPhase] = useState('cube') // 'cube' | 'text'
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false)
   const audioRef = useRef(null)
   const containerRef = useRef(null)
   const longPressTimer = useRef(null)
@@ -336,15 +337,18 @@ function PlayView({ card, error, onRequestEdit }) {
   // 页面进入时，如果有音乐，尝试自动播放一次
   useEffect(() => {
     if (!card.musicUrl || !audioRef.current) return
+    setAutoplayBlocked(false)
     const audio = audioRef.current
     audio.src = `${API_BASE}${card.musicUrl}`
     audio
       .play()
       .then(() => {
         // 自动播放成功就保持当前 phase 逻辑
+        setAutoplayBlocked(false)
       })
       .catch(() => {
         // 浏览器策略禁止自动播放时忽略，用户点击后再播放
+        setAutoplayBlocked(true)
       })
   }, [card.musicUrl])
 
@@ -534,7 +538,12 @@ function PlayView({ card, error, onRequestEdit }) {
     // 第一次点击：如果有音乐且尚未播放，只负责「开音乐」
     if (card.musicUrl && audioRef.current && audioRef.current.paused) {
       audioRef.current.src = `${API_BASE}${card.musicUrl}`
-      audioRef.current.play().catch(() => {})
+      audioRef.current
+        .play()
+        .then(() => {
+          setAutoplayBlocked(false)
+        })
+        .catch(() => {})
       return
     }
     // 之后的点击：再负责从立方体切换到文字动效
@@ -573,6 +582,11 @@ function PlayView({ card, error, onRequestEdit }) {
       onTouchCancel={handleLongPressEnd}
     >
       <div ref={containerRef} className="three-full" />
+      {autoplayBlocked && card.musicUrl && (
+        <div className="music-hint" aria-hidden="true">
+          轻触屏幕开始播放音乐
+        </div>
+      )}
       {phase === 'text' && <TextRain messages={card.messages || []} />}
       <audio ref={audioRef} loop />
       {error && <div className="error play-error">{error}</div>}
