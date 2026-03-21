@@ -41,6 +41,18 @@ body {
   margin-bottom: 12px;
 }
 
+/* 制作页：去掉原主标题后，用一句大字作为主标题 */
+.maker-hero-title {
+  margin: 0 0 16px;
+  padding: 0 4px;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: #ff6b9d;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
 .section-title {
   font-size: 13px;
   color: #ff4f8b;

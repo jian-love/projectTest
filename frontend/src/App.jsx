@@ -278,8 +278,7 @@ function MakerView({ id, onCreated }) {
   return (
     <div className="page">
       <div className="card">
-        <div className="title">深处礼物 · 制作</div>
-        <div className="sub">这是属于你的专属 NFC 表白卡</div>
+        <div className="maker-hero-title">这是属于你的专属 NFC 表白卡</div>
 
         <div className="section-title">选择图片（不超过六张）</div>
         <div className="upload-box">
